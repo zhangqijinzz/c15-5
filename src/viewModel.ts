@@ -97,6 +97,13 @@ export class EnergyLensViewModel {
     this.persist({ ...this.state.document, activeScenarioId: id }, '已切换方案');
   }
 
+  /** 只追加导入的方案，已有方案原样保留；保存失败时整体回滚，本地数据不变 */
+  importScenarios(scenarios: EnergyScenario[]): boolean {
+    if (!this.state.document || scenarios.length === 0) return false;
+    const document = { ...this.state.document, scenarios: [...this.state.document.scenarios, ...scenarios] };
+    return this.persist(document, `已导入 ${scenarios.length} 个方案，原有数据保持不变`);
+  }
+
   complete(): void {
     this.state = { ...this.state, status: 'completed', notice: { kind: 'success', text: '本次推演已保存，可随时回来继续调整' } };
     this.emit();
@@ -108,14 +115,17 @@ export class EnergyLensViewModel {
     this.persist(document, notice);
   }
 
-  private persist(document: EnergyDocument, notice: string): void {
+  private persist(document: EnergyDocument, notice: string): boolean {
     try {
       this.repository.save(document);
       this.state = { document, status: 'editing', notice: { kind: 'success', text: notice } };
+      this.emit();
+      return true;
     } catch {
       this.state = { ...this.state, status: 'error', notice: { kind: 'error', text: '保存失败，当前页面仍可继续编辑' } };
+      this.emit();
+      return false;
     }
-    this.emit();
   }
 
   private setNotice(notice: Notice): void {

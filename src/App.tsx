@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { DeviceEditor } from './components/DeviceEditor';
 import { ScenarioCard } from './components/ScenarioCard';
+import { TransferDialog } from './components/TransferDialog';
 import { formatNumber } from './domain';
 import { useEnergyLens } from './hooks';
 
 function App() {
   const { vm, state } = useEnergyLens();
+  const [transferOpen, setTransferOpen] = useState(false);
   const active = vm.activeScenario;
   const summary = vm.activeSummary;
   if (state.status === 'loading' || !active || !summary) return <main className="loading-screen"><div className="pulse" /><p>正在恢复你的能耗方案…</p></main>;
@@ -16,7 +19,7 @@ function App() {
   return <div className="app-shell">
     <header className="topbar">
       <div className="brand"><span className="brand-mark">⌁</span><span>Energy<span>Lens</span></span></div>
-      <div className="topbar-right"><span className="save-state"><i /> {state.status === 'error' ? '需要注意' : '已自动保存'}</span><button className="help-button" aria-label="帮助">?</button></div>
+      <div className="topbar-right"><span className="save-state"><i /> {state.status === 'error' ? '需要注意' : '已自动保存'}</span><button className="transfer-open" onClick={() => setTransferOpen(true)}>导出 / 导入</button><button className="help-button" aria-label="帮助">?</button></div>
     </header>
 
     <main className="page-wrap">
@@ -51,6 +54,7 @@ function App() {
       <section className="scenario-section"><div className="section-title"><div><span className="step">04</span><h2>方案对比</h2><p>复制当前方案，试试另一种生活方式</p></div><button className="secondary-button" onClick={() => vm.duplicateActive()}>＋ 复制当前方案</button></div><div className="scenario-grid">{state.document?.scenarios.map((scenario) => <ScenarioCard key={scenario.id} scenario={scenario} totalKwh={scenario.id === active.id ? summary.total.monthlyKwh : scenario.devices.reduce((sum, device) => sum + (device.watts * device.dailyHours * scenario.daysPerMonth) / 1000, 0)} active={scenario.id === active.id} onSelect={() => vm.selectScenario(scenario.id)} />)}</div>{baseline && deltaKwh !== null && <div className="comparison-note"><span>↕</span><p>当前方案相较于“{baseline.name}”每月 <b>{deltaKwh <= 0 ? '少' : '多'} {formatNumber(Math.abs(deltaKwh))} kWh</b>，电费约 <b>¥{formatNumber(Math.abs(deltaKwh) * active.pricePerKwh)}</b>。</p></div>}</section>
     </main>
     <footer><span>EnergyLens · 用数据做出更好的能源选择</span><span>本地保存 · 数据只属于你</span></footer>
+    {transferOpen && state.document && <TransferDialog doc={state.document} onImport={(scenarios) => vm.importScenarios(scenarios)} onClose={() => setTransferOpen(false)} />}
   </div>;
 }
 
