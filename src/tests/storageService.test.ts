@@ -12,4 +12,10 @@ describe('local persistence recovery', () => {
     expect(recovered.activeScenarioId).toBe(exampleScenario.id);
     expect(recovered.scenarios[0].devices.length).toBeGreaterThan(0);
   });
+
+  it('opens previously saved local data unchanged', () => {
+    const saved = { version: 1 as const, scenarios: [structuredClone(exampleScenario)], activeScenarioId: exampleScenario.id };
+    localStorage.setItem('energy-lens.document.v1', JSON.stringify(saved));
+    expect(new LocalEnergyRepository().load()).toEqual(saved);
+  });
 });

@@ -43,4 +43,45 @@ describe('EnergyLensViewModel', () => {
     expect(vm.getState().status).toBe('error');
     expect(vm.getState().notice?.text).toContain('保存失败');
   });
+
+  it('exports all scenarios as importable text', () => {
+    const text = vm.exportText();
+    expect(text).toBeTruthy();
+    const parsed = JSON.parse(text ?? '');
+    expect(parsed.kind).toBe('energy-lens/export');
+    expect(parsed.scenarios).toHaveLength(1);
+    expect(parsed.scenarios[0].devices).toHaveLength(3);
+  });
+
+  it('imports its own export as a renamed copy without overwriting', () => {
+    const text = vm.exportText() ?? '';
+    vm.importFromText(text);
+    expect(vm.getState().notice?.kind).toBe('success');
+    const scenarios = vm.getState().document?.scenarios ?? [];
+    expect(scenarios).toHaveLength(2);
+    expect(scenarios[0].id).toBe(exampleScenario.id);
+    expect(scenarios[1].id).not.toBe(exampleScenario.id);
+    expect(scenarios[1].name).toBe(`${exampleScenario.name}（导入）`);
+    expect(vm.activeSummary?.total.monthlyKwh).toBeCloseTo(262.8);
+    expect(vm.getState().transferEntries?.[0].outcome).toBe('imported');
+    expect(repository.save).toHaveBeenCalled();
+  });
+
+  it('rejects broken import content without touching the document', () => {
+    vm.importFromText('not a backup at all');
+    expect(vm.getState().status).toBe('error');
+    expect(vm.getState().document?.scenarios).toHaveLength(1);
+    expect(vm.getState().document?.scenarios[0].id).toBe(exampleScenario.id);
+  });
+
+  it('imports the healthy part of a partially damaged backup', () => {
+    const healthy = { ...structuredClone(exampleScenario), id: 'scenario-new', name: '新方案' };
+    const broken = { id: 'scenario-broken', name: '坏方案', devices: [] };
+    const text = JSON.stringify({ kind: 'energy-lens/export', version: 1, exportedAt: '', scenarios: [broken, healthy] });
+    vm.importFromText(text);
+    expect(vm.getState().notice?.kind).toBe('success');
+    expect(vm.getState().notice?.text).toContain('1 个因数据问题被跳过');
+    expect(vm.getState().document?.scenarios.map((scenario) => scenario.id)).toEqual([exampleScenario.id, 'scenario-new']);
+    expect(vm.getState().transferEntries?.map((entry) => entry.outcome)).toEqual(['skipped', 'imported']);
+  });
 });

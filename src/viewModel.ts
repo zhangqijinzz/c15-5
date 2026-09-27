@@ -1,17 +1,19 @@
 import { cloneScenario, summarizeScenario, validateDevice, validateScenarioSettings } from './domain';
 import { findScenario, type EnergyRepository } from './repository';
+import { importScenarios, serializeScenarios, type TransferEntry } from './services/transferService';
 import type { EnergyDevice, EnergyDocument, EnergyScenario, Notice, ViewStatus } from './types';
 
 export interface EnergyLensState {
   document: EnergyDocument | null;
   status: ViewStatus;
   notice: Notice | null;
+  transferEntries: TransferEntry[] | null;
 }
 
 type Listener = (state: EnergyLensState) => void;
 
 export class EnergyLensViewModel {
-  private state: EnergyLensState = { document: null, status: 'loading', notice: null };
+  private state: EnergyLensState = { document: null, status: 'loading', notice: null, transferEntries: null };
   private readonly listeners = new Set<Listener>();
 
   constructor(private readonly repository: EnergyRepository) {}
@@ -25,9 +27,9 @@ export class EnergyLensViewModel {
 
   initialize(): void {
     try {
-      this.state = { document: this.repository.load(), status: 'ready', notice: null };
+      this.state = { document: this.repository.load(), status: 'ready', notice: null, transferEntries: null };
     } catch {
-      this.state = { document: null, status: 'error', notice: { kind: 'error', text: '本地数据读取失败，请刷新重试' } };
+      this.state = { document: null, status: 'error', notice: { kind: 'error', text: '本地数据读取失败，请刷新重试' }, transferEntries: null };
     }
     this.emit();
   }
@@ -102,6 +104,33 @@ export class EnergyLensViewModel {
     this.emit();
   }
 
+  exportText(): string | null {
+    if (!this.state.document) return null;
+    return serializeScenarios(this.state.document.scenarios);
+  }
+
+  importFromText(text: string): void {
+    if (!this.state.document) return;
+    const result = importScenarios(this.state.document, text);
+    if (!result.ok) {
+      this.state = { ...this.state, status: 'error', notice: { kind: 'error', text: result.error }, transferEntries: result.entries.length ? result.entries : null };
+      this.emit();
+      return;
+    }
+    try {
+      this.repository.save(result.document);
+      const importedCount = result.entries.filter((entry) => entry.outcome === 'imported').length;
+      const skippedCount = result.entries.length - importedCount;
+      const notice = skippedCount > 0
+        ? `已导入 ${importedCount} 个方案，${skippedCount} 个因数据问题被跳过（详见导入结果）`
+        : `已导入 ${importedCount} 个方案，设备明细与计费参数已完整还原`;
+      this.state = { document: result.document, status: 'editing', notice: { kind: 'success', text: notice }, transferEntries: result.entries };
+    } catch {
+      this.state = { ...this.state, status: 'error', notice: { kind: 'error', text: '保存失败，当前页面仍可继续编辑' } };
+    }
+    this.emit();
+  }
+
   private commit(update: (scenario: EnergyScenario) => EnergyScenario, notice: string): void {
     if (!this.state.document) return;
     const document = { ...this.state.document, scenarios: this.state.document.scenarios.map((scenario) => scenario.id === this.state.document?.activeScenarioId ? update(scenario) : scenario) };
@@ -111,7 +140,7 @@ export class EnergyLensViewModel {
   private persist(document: EnergyDocument, notice: string): void {
     try {
       this.repository.save(document);
-      this.state = { document, status: 'editing', notice: { kind: 'success', text: notice } };
+      this.state = { ...this.state, document, status: 'editing', notice: { kind: 'success', text: notice } };
     } catch {
       this.state = { ...this.state, status: 'error', notice: { kind: 'error', text: '保存失败，当前页面仍可继续编辑' } };
     }
